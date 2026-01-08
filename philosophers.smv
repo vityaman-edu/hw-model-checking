@@ -1,85 +1,82 @@
 MODULE main
+  DEFINE n := 5;
+
   VAR
-    ph_0 : philosopher (0, n, states, forks);
-    ph_1 : philosopher (1, n, states, forks);
-    ph_2 : philosopher (2, n, states, forks);
-    ph_3 : philosopher (3, n, states, forks);
-    ph_4 : philosopher (4, n, states, forks);
-    states : array 0 .. 4 of { THINKING, HUNGRY, LEFTFORK, EATING, RIGHTFORK, FULL };
-    forks : array 0 .. 4 of { FREE, BUSY };
+    states : array 0 .. 4 of { THINKING, HUNGRY, LEFTFORK, EATING, FULL, RIGHTFORK };
+    forks  : array 0 .. 4 of { FREE, BUSY };
+
+    ph_0 : process philosopher(0, n, states, forks);
+    ph_1 : process philosopher(1, n, states, forks);
+    ph_2 : process philosopher(2, n, states, forks);
+    ph_3 : process philosopher(3, n, states, forks);
+    ph_4 : process philosopher(4, n, states, forks);
+
   ASSIGN
     init(forks[0]) := FREE;
     init(forks[1]) := FREE;
     init(forks[2]) := FREE;
     init(forks[3]) := FREE;
     init(forks[4]) := FREE;
-  DEFINE
-    n := 5;
 
+  FAIRNESS running
 
-MODULE philosopher (i, n, states, forks)
-  DEFINE
-    left := i;
-    right := (i + 1) mod n;
-    state := states[i];
-  ASSIGN
-    init(states[i]) := THINKING;
-    next(states[i]) := case
-      (state = THINKING)                          : { THINKING, HUNGRY };
-      (state = HUNGRY) & (forks[left] = FREE)     : LEFTFORK;
-      (state = LEFTFORK) & (forks[right] = FREE)  : EATING;
-      (state = EATING)                            : { EATING, FULL };
-      (state = FULL)                              : RIGHTFORK;
-      (state = RIGHTFORK)                         : THINKING;
-      TRUE                                        : state;
-    esac;
-    next(forks[left]) := case
-      (state = HUNGRY) & (forks[left] = FREE)     : BUSY;
-      (state = FULL)                              : FREE;
-      TRUE                                        : forks[left];
-    esac;
-    next(forks[right]) := case
-      (state = LEFTFORK) & (forks[right] = FREE)  : BUSY;
-      (state = RIGHTFORK)                         : FREE;
-      TRUE                                        : forks[right];
-    esac;
-
-LTLSPEC (
+LTLSPEC NAME deadlock_check :=
   !F G (
     ((states[0] = HUNGRY) | (states[0] = LEFTFORK)) &
     ((states[1] = HUNGRY) | (states[1] = LEFTFORK)) &
     ((states[2] = HUNGRY) | (states[2] = LEFTFORK)) &
     ((states[3] = HUNGRY) | (states[3] = LEFTFORK)) &
     ((states[4] = HUNGRY) | (states[4] = LEFTFORK))
-  )
-);
+  );
 
-CTLSPEC (
+CTLSPEC NAME liveness :=
   AG (
-    (AF states [0] = EATING) &
-    (AF states [1] = EATING) &
-    (AF states [2] = EATING) &
-    (AF states [3] = EATING) &
-    (AF states [4] = EATING)
-  )
-);
+    (states[0] = HUNGRY -> AF states[0] = EATING) &
+    (states[1] = HUNGRY -> AF states[1] = EATING) &
+    (states[2] = HUNGRY -> AF states[2] = EATING) &
+    (states[3] = HUNGRY -> AF states[3] = EATING) &
+    (states[4] = HUNGRY -> AF states[4] = EATING)
+  );
 
-CTLSPEC (
-  AG (
-    ((states[0] = EATING) -> ((states[4] != EATING) & (states[1] != EATING))) &
-    ((states[1] = EATING) -> ((states[0] != EATING) & (states[2] != EATING))) &
-    ((states[2] = EATING) -> ((states[1] != EATING) & (states[3] != EATING))) &
-    ((states[3] = EATING) -> ((states[2] != EATING) & (states[4] != EATING))) &
-    ((states[4] = EATING) -> ((states[3] != EATING) & (states[0] != EATING)))
-  )
-);
+CTLSPEC NAME mutual_exclusion :=
+  AG !(
+    (states[0] = EATING & states[1] = EATING) |
+    (states[1] = EATING & states[2] = EATING) |
+    (states[2] = EATING & states[3] = EATING) |
+    (states[3] = EATING & states[4] = EATING) |
+    (states[4] = EATING & states[0] = EATING)
+  );
 
-CTLSPEC (
-  AG (
-    (EF ((states[0] = EATING) & (states[2] = EATING))) &
-    (EF ((states[1] = EATING) & (states[3] = EATING))) &
-    (EF ((states[2] = EATING) & (states[4] = EATING))) &
-    (EF ((states[3] = EATING) & (states[0] = EATING))) &
-    (EF ((states[4] = EATING) & (states[1] = EATING)))
-  )
-);
+CTLSPEC NAME concurrency_possible :=
+    AG EF (states[0] = EATING & states[2] = EATING);
+
+MODULE philosopher (i, n, states, forks)
+  DEFINE
+    left  := i;
+    right := (i + 1) mod n;
+    state := states[i];
+
+  ASSIGN
+    init(states[i]) := THINKING;
+
+    next(states[i]) := case
+      state = THINKING                          : {THINKING, HUNGRY};
+      state = HUNGRY   & forks[left] = FREE     : LEFTFORK;
+      state = LEFTFORK & forks[right] = FREE    : EATING;
+      state = EATING                            : FULL;
+      state = FULL                              : RIGHTFORK;
+      state = RIGHTFORK                         : THINKING;
+      TRUE                                      : state;
+    esac;
+
+    next(forks[left]) := case
+      (state = HUNGRY & forks[left] = FREE) : BUSY;
+      state = FULL                          : FREE;
+      TRUE                                  : forks[left];
+    esac;
+
+    next(forks[right]) := case
+      (state = LEFTFORK & forks[right] = FREE) : BUSY;
+      state = RIGHTFORK                        : FREE;
+      TRUE                                     : forks[right];
+    esac;
