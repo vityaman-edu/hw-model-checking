@@ -1,6 +1,6 @@
 MODULE main
   DEFINE
-    ticks_cross               := 4;
+    ticks_cross               := 2;
 
     ticks_light_horizontal    := 6;
     ticks_light_vertical      := 6;
@@ -13,8 +13,6 @@ MODULE main
 
     tick_cross_max            := ticks_cross - 1;
 
-    cars_waiting_max          := 64;
-
   INVAR 2 <= ticks_cross;
   INVAR 1 <= ticks_light_horizontal;
   INVAR 1 <= ticks_light_vertical;
@@ -22,13 +20,15 @@ MODULE main
   INVAR tick_light_no_horizontal < tick_light_no_vertical;
 
   VAR
-    side_t                : { EAST, NORTH, WEST, SOUTH };
+    side_t        : { EAST, NORTH, WEST, SOUTH };
 
-    light_tick            : 0..tick_light_max;
-    light_signal          : { EW_GO, NS_GO, STAY };
+    light_tick    : 0..tick_light_max;
+    light_signal  : { EW_GO, NS_GO, STAY };
 
-    cars_crossing_bitvec  : array 0..3 of unsigned word[tick_cross_max];
-    cars_waiting_count    : array 0..3 of 0..cars_waiting_max;
+    road_east     : road(EAST, light_signal, tick_cross_max);
+    road_north    : road(NORTH , light_signal, tick_cross_max);
+    road_west     : road(WEST, light_signal, tick_cross_max);
+    road_south    : road(SOUTH, light_signal, tick_cross_max);
 
   ASSIGN
     init(light_tick) := 0;
@@ -46,3 +46,59 @@ MODULE main
   LTLSPEC G F (light_signal = EW_GO);
   LTLSPEC G F (light_signal = NS_GO);
   LTLSPEC G F (light_signal = STAY);
+
+  DEFINE
+    traffic_jam_threshold := 8;
+    is_traffic_jam := (
+      (traffic_jam_threshold <= road_east .cars_waiting_count) |
+      (traffic_jam_threshold <= road_north.cars_waiting_count) |
+      (traffic_jam_threshold <= road_west .cars_waiting_count) |
+      (traffic_jam_threshold <= road_south.cars_waiting_count)
+    );
+
+  LTLSPEC G !is_traffic_jam;
+
+MODULE road(side, light_signal, tick_cross_max)
+  DEFINE
+    cars_arrival_interval     := 4;
+    cars_arrival_timeout_max  := cars_arrival_interval - 1;
+    cars_waiting_max          := 64;
+
+  INVAR 2 <= cars_arrival_interval;
+  INVAR 4 <= cars_waiting_max;
+
+  VAR
+    cars_arrival_timeout      : 0..cars_arrival_timeout_max;
+    cars_waiting_count        : 0..cars_waiting_max;
+    cars_crossing_locations   : unsigned word[tick_cross_max];
+
+  DEFINE
+    is_car_able_to_departure := (
+      ((side in { EAST, WEST }) & (
+        (light_signal = EW_GO)
+      )) |
+      ((side in { NORTH, SOUTH }) & (
+        (light_signal = NS_GO)
+      ))
+    );
+
+    is_car_arriving          := (cars_arrival_timeout = 0);
+
+  ASSIGN
+    init(cars_arrival_timeout) := cars_arrival_timeout_max;
+    next(cars_arrival_timeout) := case
+      (cars_arrival_timeout = cars_arrival_timeout_max) : { 0, cars_arrival_timeout_max };
+      TRUE                                              : cars_arrival_timeout + 1;
+    esac;
+
+    init(cars_waiting_count) := 0;
+    next(cars_waiting_count) := case
+      ( is_car_able_to_departure & !is_car_arriving & (0 < cars_waiting_count))
+        : cars_waiting_count - 1;
+      (!is_car_able_to_departure &  is_car_arriving & (cars_waiting_count < cars_waiting_max))
+        : cars_waiting_count + 1;
+      TRUE
+        : cars_waiting_count;
+    esac;
+
+    init(cars_crossing_locations) := extend(0ub_0, tick_cross_max - 1);
