@@ -1,0 +1,48 @@
+MODULE main
+  DEFINE
+    ticks_cross               := 4;
+
+    ticks_light_horizontal    := 6;
+    ticks_light_vertical      := 6;
+
+    tick_light_go_horizontal  := 0;
+    tick_light_no_horizontal  := ticks_light_horizontal - ticks_cross;
+    tick_light_go_vertical    := ticks_light_horizontal;
+    tick_light_no_vertical    := ticks_light_horizontal + (ticks_light_vertical - ticks_cross);
+    tick_light_max            := ticks_light_horizontal + ticks_light_vertical - 1;
+
+    tick_cross_max            := ticks_cross - 1;
+
+    cars_waiting_max          := 64;
+
+  INVAR 2 <= ticks_cross;
+  INVAR 1 <= ticks_light_horizontal;
+  INVAR 1 <= ticks_light_vertical;
+  INVAR 1 <= tick_light_no_horizontal;
+  INVAR tick_light_no_horizontal < tick_light_no_vertical;
+
+  VAR
+    side_t                : { EAST, NORTH, WEST, SOUTH };
+
+    light_tick            : 0..tick_light_max;
+    light_signal          : { EW_GO, NS_GO, STAY };
+
+    cars_crossing_bitvec  : array 0..3 of unsigned word[tick_cross_max];
+    cars_waiting_count    : array 0..3 of 0..cars_waiting_max;
+
+  ASSIGN
+    init(light_tick) := 0;
+    next(light_tick) := (light_tick + 1) mod (tick_light_max + 1);
+
+    init(light_signal) := EW_GO;
+    next(light_signal) := case
+      (next(light_tick) = tick_light_go_horizontal) : EW_GO;
+      (next(light_tick) = tick_light_no_horizontal) : STAY;
+      (next(light_tick) = tick_light_go_vertical)   : NS_GO;
+      (next(light_tick) = tick_light_no_vertical)   : STAY;
+      TRUE                                          : light_signal;
+    esac;
+
+  LTLSPEC G F (light_signal = EW_GO);
+  LTLSPEC G F (light_signal = NS_GO);
+  LTLSPEC G F (light_signal = STAY);
