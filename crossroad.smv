@@ -55,8 +55,29 @@ MODULE main
       (traffic_jam_threshold <= road_west .cars_waiting_count) |
       (traffic_jam_threshold <= road_south.cars_waiting_count)
     );
-
   LTLSPEC G !is_traffic_jam;
+
+  DEFINE
+    is_crossroad_empty := (
+      (road_east .cars_crossing_locations = 0ub_0) &
+      (road_north.cars_crossing_locations = 0ub_0) &
+      (road_west .cars_crossing_locations = 0ub_0) &
+      (road_south.cars_crossing_locations = 0ub_0)
+    );
+  LTLSPEC G F is_crossroad_empty;
+  CTLSPEC ! AG is_crossroad_empty;
+
+  DEFINE
+    is_accident_detected := (
+      (
+        (road_east.cars_crossing_locations != 0ub_0) |
+        (road_west.cars_crossing_locations != 0ub_0)
+      ) & (
+        (road_north.cars_crossing_locations != 0ub_0) |
+        (road_south.cars_crossing_locations != 0ub_0)
+      )
+    );
+  LTLSPEC G !is_accident_detected;
 
 MODULE road(side, light_signal, tick_cross_max)
   DEFINE
@@ -102,3 +123,7 @@ MODULE road(side, light_signal, tick_cross_max)
     esac;
 
     init(cars_crossing_locations) := extend(0ub_0, tick_cross_max - 1);
+    next(cars_crossing_locations) := (cars_crossing_locations << 1) + (case
+      (is_car_able_to_departure & (0 < cars_waiting_count)) : 0ub_1;
+      TRUE                                                  : 0ub_0;
+    esac);
