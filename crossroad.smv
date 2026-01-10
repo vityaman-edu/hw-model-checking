@@ -57,39 +57,24 @@ MODULE main
     );
   LTLSPEC G !is_traffic_jam;
 
-  DEFINE
-    is_crossroad_empty := (
-      (road_east .cars_crossing_forward = extend(0ub_0, tick_cross_max - 1)) &
-      (road_east .cars_crossing_right   = extend(0ub_0, tick_cross_max - 1)) &
-      (road_north.cars_crossing_forward = extend(0ub_0, tick_cross_max - 1)) &
-      (road_north.cars_crossing_right   = extend(0ub_0, tick_cross_max - 1)) &
-      (road_west .cars_crossing_forward = extend(0ub_0, tick_cross_max - 1)) &
-      (road_west .cars_crossing_right   = extend(0ub_0, tick_cross_max - 1)) &
-      (road_south.cars_crossing_forward = extend(0ub_0, tick_cross_max - 1)) &
-      (road_south.cars_crossing_right   = extend(0ub_0, tick_cross_max - 1))
-    );
-  LTLSPEC G F is_crossroad_empty;
-  CTLSPEC ! AG is_crossroad_empty;
-
-  CTLSPEC AG EF (road_east .cars_crossing_forward = extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_north.cars_crossing_forward = extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_west .cars_crossing_forward = extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_south.cars_crossing_forward = extend(0ub_0, tick_cross_max - 1));
-
-  CTLSPEC AG EF (road_east .cars_crossing_forward != extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_north.cars_crossing_forward != extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_west .cars_crossing_forward != extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_south.cars_crossing_forward != extend(0ub_0, tick_cross_max - 1));
-
-  CTLSPEC AG EF (road_east .cars_crossing_right  = extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_north.cars_crossing_right  = extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_west .cars_crossing_right  = extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_south.cars_crossing_right  = extend(0ub_0, tick_cross_max - 1));
-
-  CTLSPEC AG EF (road_east .cars_crossing_right  != extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_north.cars_crossing_right  != extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_west .cars_crossing_right  != extend(0ub_0, tick_cross_max - 1));
-  CTLSPEC AG EF (road_south.cars_crossing_right  != extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC NAME liveness := (
+    AG EF (road_east .cars_crossing_forward  = extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_north.cars_crossing_forward  = extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_west .cars_crossing_forward  = extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_south.cars_crossing_forward  = extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_east .cars_crossing_forward != extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_north.cars_crossing_forward != extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_west .cars_crossing_forward != extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_south.cars_crossing_forward != extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_east .cars_crossing_right    = extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_north.cars_crossing_right    = extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_west .cars_crossing_right    = extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_south.cars_crossing_right    = extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_east .cars_crossing_right   != extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_north.cars_crossing_right   != extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_west .cars_crossing_right   != extend(0ub_0, tick_cross_max - 1)) &
+    AG EF (road_south.cars_crossing_right   != extend(0ub_0, tick_cross_max - 1))
+  );
 
   DEFINE
     is_forward_left_conflict := (
@@ -99,6 +84,31 @@ MODULE main
       road_south.is_forward_left_conflict
     );
   LTLSPEC G !is_forward_left_conflict;
+
+  DEFINE
+    zero := extend(0ub_0, tick_cross_max - 1);
+
+    cars_crossing_horizontally := (
+      road_east.cars_crossing_forward |
+      road_west.cars_crossing_forward
+    );
+
+    cars_crossing_vertically := (
+      road_north.cars_crossing_forward |
+      road_south.cars_crossing_forward
+    );
+
+    is_dangerous := (
+      ((road_east.cars_crossing_forward  != zero) & (cars_crossing_vertically   != zero)) |
+      ((road_west.cars_crossing_forward  != zero) & (cars_crossing_vertically   != zero)) |
+      ((road_north.cars_crossing_forward != zero) & (cars_crossing_horizontally != zero)) |
+      ((road_south.cars_crossing_forward != zero) & (cars_crossing_horizontally != zero)) |
+      (road_east .is_in_enemy_danger) |
+      (road_west .is_in_enemy_danger) |
+      (road_north.is_in_enemy_danger) |
+      (road_south.is_in_enemy_danger)
+    );
+    LTLSPEC G !is_dangerous;
 
 MODULE road(side, light_signal, tick_cross_max, enemy_road)
   DEFINE
@@ -158,6 +168,11 @@ MODULE road(side, light_signal, tick_cross_max, enemy_road)
       !is_car_arriving
     );
 
+    is_in_enemy_danger := (
+      (enemy_road.cars_crossing_forward & cars_crossing_right)
+        != extend(0ub_0, tick_cross_max - 1)
+    );
+
   ASSIGN
     init(cars_arrival_timeout) := cars_arrival_timeout_max;
     next(cars_arrival_timeout) := case
@@ -178,12 +193,12 @@ MODULE road(side, light_signal, tick_cross_max, enemy_road)
     init(cars_crossing_forward) := extend(0ub_0, tick_cross_max - 1);
     next(cars_crossing_forward) := (cars_crossing_forward << 1) + (case
       is_head_will_departure_forward : extend(0ub_1, tick_cross_max - 1);
-      TRUE                          : extend(0ub_0, tick_cross_max - 1);
+      TRUE                           : extend(0ub_0, tick_cross_max - 1);
     esac);
 
     init(cars_crossing_right) := extend(0ub_0, tick_cross_max - 1);
     next(cars_crossing_right) := (cars_crossing_right << 1) + (case
-      is_head_will_departure_right   : extend(0ub_1, tick_cross_max - 1);
+      is_head_will_departure_right  : extend(0ub_1, tick_cross_max - 1);
       TRUE                          : extend(0ub_0, tick_cross_max - 1);
     esac);
 
@@ -191,5 +206,5 @@ MODULE road(side, light_signal, tick_cross_max, enemy_road)
     next(is_head_going_right) := case
       is_head_will_departure_forward  : {TRUE, FALSE};
       is_head_will_departure_right    : {TRUE, FALSE};
-      TRUE                              : is_head_going_right;
+      TRUE                            : is_head_going_right;
     esac;
