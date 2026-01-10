@@ -54,13 +54,16 @@ MODULE main
 
   DEFINE
     traffic_jam_threshold := 8;
-    is_traffic_jam := (
-      (traffic_jam_threshold <= road_east .cars_waiting_count) |
+    is_traffic_jam_horizontal := (
+      (traffic_jam_threshold <= road_east.cars_waiting_count) |
+      (traffic_jam_threshold <= road_west .cars_waiting_count)
+    );
+    is_traffic_jam_vertical := (
       (traffic_jam_threshold <= road_north.cars_waiting_count) |
-      (traffic_jam_threshold <= road_west .cars_waiting_count) |
       (traffic_jam_threshold <= road_south.cars_waiting_count)
     );
-  LTLSPEC G !is_traffic_jam;
+  LTLSPEC G !is_traffic_jam_horizontal;
+  LTLSPEC G !is_traffic_jam_vertical;
 
   CTLSPEC NAME crossroad_liveness := (
     AG EF (road_east .cars_crossing_forward  = zero) &
