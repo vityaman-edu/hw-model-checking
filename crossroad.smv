@@ -45,6 +45,7 @@ MODULE main
 
   DEFINE
     zero := extend(0ub_0, tick_cross_max - 1);
+    one := extend(0ub_1, tick_cross_max - 1);
 
   LTLSPEC NAME light_signal_liveness := (
     (G F (light_signal = EW_GO)) &
@@ -110,6 +111,13 @@ MODULE main
       road_south.is_forward_left_conflict
     );
   LTLSPEC G !is_dangerous;
+
+  LTLSPEC NAME is_light_signal_restricting := G (
+    ((light_signal != EW_GO) -> X ((road_east .cars_crossing_forward & one) = zero)) &
+    ((light_signal != EW_GO) -> X ((road_west .cars_crossing_forward & one) = zero)) &
+    ((light_signal != NS_GO) -> X ((road_north.cars_crossing_forward & one) = zero)) &
+    ((light_signal != NS_GO) -> X ((road_south.cars_crossing_forward & one) = zero))
+  );
 
 MODULE road(side, light_signal, tick_cross_max, enemy_road)
   DEFINE
