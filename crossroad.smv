@@ -1,6 +1,6 @@
 MODULE main
   DEFINE
-    ticks_cross               := 2;
+    ticks_cross               := 3;
 
     ticks_light_horizontal    := 6;
     ticks_light_vertical      := 6;
@@ -25,10 +25,10 @@ MODULE main
     light_tick    : 0..tick_light_max;
     light_signal  : { EW_GO, NS_GO, STAY };
 
-    road_east     : road(EAST, light_signal, tick_cross_max);
-    road_north    : road(NORTH , light_signal, tick_cross_max);
-    road_west     : road(WEST, light_signal, tick_cross_max);
-    road_south    : road(SOUTH, light_signal, tick_cross_max);
+    road_east     : road(EAST, light_signal, tick_cross_max, road_north);
+    road_north    : road(NORTH , light_signal, tick_cross_max, road_west);
+    road_west     : road(WEST, light_signal, tick_cross_max, road_south);
+    road_south    : road(SOUTH, light_signal, tick_cross_max, road_east);
 
   ASSIGN
     init(light_tick) := 0;
@@ -59,27 +59,48 @@ MODULE main
 
   DEFINE
     is_crossroad_empty := (
-      (road_east .cars_crossing_locations = 0ub_0) &
-      (road_north.cars_crossing_locations = 0ub_0) &
-      (road_west .cars_crossing_locations = 0ub_0) &
-      (road_south.cars_crossing_locations = 0ub_0)
+      (road_east .cars_crossing_forward = extend(0ub_0, tick_cross_max - 1)) &
+      (road_east .cars_crossing_right   = extend(0ub_0, tick_cross_max - 1)) &
+      (road_north.cars_crossing_forward = extend(0ub_0, tick_cross_max - 1)) &
+      (road_north.cars_crossing_right   = extend(0ub_0, tick_cross_max - 1)) &
+      (road_west .cars_crossing_forward = extend(0ub_0, tick_cross_max - 1)) &
+      (road_west .cars_crossing_right   = extend(0ub_0, tick_cross_max - 1)) &
+      (road_south.cars_crossing_forward = extend(0ub_0, tick_cross_max - 1)) &
+      (road_south.cars_crossing_right   = extend(0ub_0, tick_cross_max - 1))
     );
   LTLSPEC G F is_crossroad_empty;
   CTLSPEC ! AG is_crossroad_empty;
 
-  DEFINE
-    is_accident_detected := (
-      (
-        (road_east.cars_crossing_locations != 0ub_0) |
-        (road_west.cars_crossing_locations != 0ub_0)
-      ) & (
-        (road_north.cars_crossing_locations != 0ub_0) |
-        (road_south.cars_crossing_locations != 0ub_0)
-      )
-    );
-  LTLSPEC G !is_accident_detected;
+  CTLSPEC AG EF (road_east .cars_crossing_forward = extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_north.cars_crossing_forward = extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_west .cars_crossing_forward = extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_south.cars_crossing_forward = extend(0ub_0, tick_cross_max - 1));
 
-MODULE road(side, light_signal, tick_cross_max)
+  CTLSPEC AG EF (road_east .cars_crossing_forward != extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_north.cars_crossing_forward != extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_west .cars_crossing_forward != extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_south.cars_crossing_forward != extend(0ub_0, tick_cross_max - 1));
+
+  CTLSPEC AG EF (road_east .cars_crossing_right  = extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_north.cars_crossing_right  = extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_west .cars_crossing_right  = extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_south.cars_crossing_right  = extend(0ub_0, tick_cross_max - 1));
+
+  CTLSPEC AG EF (road_east .cars_crossing_right  != extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_north.cars_crossing_right  != extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_west .cars_crossing_right  != extend(0ub_0, tick_cross_max - 1));
+  CTLSPEC AG EF (road_south.cars_crossing_right  != extend(0ub_0, tick_cross_max - 1));
+
+  DEFINE
+    is_forward_left_conflict := (
+      road_east .is_forward_left_conflict |
+      road_north.is_forward_left_conflict |
+      road_west .is_forward_left_conflict |
+      road_south.is_forward_left_conflict
+    );
+  LTLSPEC G !is_forward_left_conflict;
+
+MODULE road(side, light_signal, tick_cross_max, enemy_road)
   DEFINE
     cars_arrival_interval     := 4;
     cars_arrival_timeout_max  := cars_arrival_interval - 1;
@@ -91,19 +112,51 @@ MODULE road(side, light_signal, tick_cross_max)
   VAR
     cars_arrival_timeout      : 0..cars_arrival_timeout_max;
     cars_waiting_count        : 0..cars_waiting_max;
-    cars_crossing_locations   : unsigned word[tick_cross_max];
+    cars_crossing_forward     : unsigned word[tick_cross_max];
+    cars_crossing_right       : unsigned word[tick_cross_max];
+    is_head_going_right       : boolean;
 
   DEFINE
-    is_car_able_to_departure := (
-      ((side in { EAST, WEST }) & (
-        (light_signal = EW_GO)
-      )) |
-      ((side in { NORTH, SOUTH }) & (
-        (light_signal = NS_GO)
-      ))
+    is_car_able_to_departure_forward := (
+      ((side in { EAST, WEST }) & (light_signal = EW_GO)) |
+      ((side in { NORTH, SOUTH }) & (light_signal = NS_GO))
     );
 
-    is_car_arriving          := (cars_arrival_timeout = 0);
+    is_car_able_to_departure_right := is_car_able_to_departure_forward | (
+      ((side in { EAST,  WEST  }) & (light_signal = NS_GO) & enemy_road.is_clear) |
+      ((side in { NORTH, SOUTH }) & (light_signal = EW_GO) & enemy_road.is_clear)
+    );
+    
+    is_head_will_departure_forward := (
+      !is_head_going_right &
+      is_car_able_to_departure_forward & 
+      (0 < cars_waiting_count)
+    );
+    
+    is_head_will_departure_right := (
+      is_head_going_right &
+      is_car_able_to_departure_right &
+      (0 < cars_waiting_count)
+    );
+    
+    is_head_will_departure := (
+      is_head_will_departure_forward | 
+      is_head_will_departure_right
+    );
+
+    is_car_arriving := (cars_arrival_timeout = 0);
+
+    is_forward_left_conflict := (
+      (cars_crossing_forward & cars_crossing_right)
+        != extend(0ub_0, tick_cross_max - 1)
+    );
+
+    is_clear := (
+      (cars_waiting_count = 0) &
+      (cars_crossing_forward = extend(0ub_0, tick_cross_max - 1)) &
+      (cars_crossing_right = extend(0ub_0, tick_cross_max - 1)) &
+      !is_car_arriving
+    );
 
   ASSIGN
     init(cars_arrival_timeout) := cars_arrival_timeout_max;
@@ -114,16 +167,29 @@ MODULE road(side, light_signal, tick_cross_max)
 
     init(cars_waiting_count) := 0;
     next(cars_waiting_count) := case
-      ( is_car_able_to_departure & !is_car_arriving & (0 < cars_waiting_count))
+      ( is_head_will_departure & !is_car_arriving)
         : cars_waiting_count - 1;
-      (!is_car_able_to_departure &  is_car_arriving & (cars_waiting_count < cars_waiting_max))
+      (!is_head_will_departure &  is_car_arriving & (cars_waiting_count < cars_waiting_max))
         : cars_waiting_count + 1;
       TRUE
         : cars_waiting_count;
     esac;
 
-    init(cars_crossing_locations) := extend(0ub_0, tick_cross_max - 1);
-    next(cars_crossing_locations) := (cars_crossing_locations << 1) + (case
-      (is_car_able_to_departure & (0 < cars_waiting_count)) : 0ub_1;
-      TRUE                                                  : 0ub_0;
+    init(cars_crossing_forward) := extend(0ub_0, tick_cross_max - 1);
+    next(cars_crossing_forward) := (cars_crossing_forward << 1) + (case
+      is_head_will_departure_forward : extend(0ub_1, tick_cross_max - 1);
+      TRUE                          : extend(0ub_0, tick_cross_max - 1);
     esac);
+
+    init(cars_crossing_right) := extend(0ub_0, tick_cross_max - 1);
+    next(cars_crossing_right) := (cars_crossing_right << 1) + (case
+      is_head_will_departure_right   : extend(0ub_1, tick_cross_max - 1);
+      TRUE                          : extend(0ub_0, tick_cross_max - 1);
+    esac);
+
+    init(is_head_going_right) := FALSE;
+    next(is_head_going_right) := case
+      is_head_will_departure_forward  : {TRUE, FALSE};
+      is_head_will_departure_right    : {TRUE, FALSE};
+      TRUE                              : is_head_going_right;
+    esac;

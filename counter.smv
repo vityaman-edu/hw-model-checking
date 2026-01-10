@@ -1,0 +1,19 @@
+MODULE main
+  VAR
+    i : 0..4;
+
+  ASSIGN
+    init(i) := 0;
+    next(i) := (i + 1) mod 5;
+
+  -- Liveness properties
+  LTLSPEC G F(i = 0) & G F(i = 1) & G F(i = 2) & G F(i = 3) & G F(i = 4);
+
+  -- Alternative: Sequential liveness
+  LTLSPEC G F(i = 0 & X(i = 1)) & G F(i = 1 & X(i = 2)) & G F(i = 2 & X(i = 3)) & G F(i = 3 & X(i = 4)) & G F(i = 4 & X(i = 0));
+
+  -- Safety property: i always in valid range
+  CTLSPEC AG(i >= 0 & i <= 4);
+
+  -- Basic liveness (weaker)
+  LTLSPEC F(i = 0) & F(i = 1) & F(i = 2) & F(i = 3) & F(i = 4);
