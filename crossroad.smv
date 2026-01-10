@@ -125,6 +125,8 @@ MODULE road(side, light_signal, tick_cross_max, enemy_road)
     is_head_going_right       : boolean;
 
   DEFINE
+    zero := extend(0ub_0, tick_cross_max - 1);
+
     is_car_able_to_departure_forward := (
       ((side in { EAST, WEST }) & (light_signal = EW_GO)) |
       ((side in { NORTH, SOUTH }) & (light_signal = NS_GO))
@@ -155,20 +157,19 @@ MODULE road(side, light_signal, tick_cross_max, enemy_road)
     is_car_arriving := (cars_arrival_timeout = 0);
 
     is_forward_left_conflict := (
-      (cars_crossing_forward & cars_crossing_right)
-        != extend(0ub_0, tick_cross_max - 1)
+      (cars_crossing_forward & cars_crossing_right) != zero
     );
 
     is_clear := (
       (cars_waiting_count = 0) &
-      (cars_crossing_forward = extend(0ub_0, tick_cross_max - 1)) &
-      (cars_crossing_right = extend(0ub_0, tick_cross_max - 1)) &
+      (cars_crossing_forward = zero) &
+      (cars_crossing_right = zero) &
       !is_car_arriving
     );
 
     is_in_enemy_danger := (
       (enemy_road.cars_crossing_forward & cars_crossing_right)
-        != extend(0ub_0, tick_cross_max - 1)
+        != zero
     );
 
   ASSIGN
@@ -188,16 +189,16 @@ MODULE road(side, light_signal, tick_cross_max, enemy_road)
         : cars_waiting_count;
     esac;
 
-    init(cars_crossing_forward) := extend(0ub_0, tick_cross_max - 1);
+    init(cars_crossing_forward) := zero;
     next(cars_crossing_forward) := (cars_crossing_forward << 1) + (case
       is_head_will_departure_forward : extend(0ub_1, tick_cross_max - 1);
-      TRUE                           : extend(0ub_0, tick_cross_max - 1);
+      TRUE                           : zero;
     esac);
 
-    init(cars_crossing_right) := extend(0ub_0, tick_cross_max - 1);
+    init(cars_crossing_right) := zero;
     next(cars_crossing_right) := (cars_crossing_right << 1) + (case
       is_head_will_departure_right  : extend(0ub_1, tick_cross_max - 1);
-      TRUE                          : extend(0ub_0, tick_cross_max - 1);
+      TRUE                          : zero;
     esac);
 
     init(is_head_going_right) := FALSE;
