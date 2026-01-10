@@ -43,9 +43,14 @@ MODULE main
       TRUE                                          : light_signal;
     esac;
 
-  LTLSPEC G F (light_signal = EW_GO);
-  LTLSPEC G F (light_signal = NS_GO);
-  LTLSPEC G F (light_signal = STAY);
+  DEFINE
+    zero := extend(0ub_0, tick_cross_max - 1);
+
+  LTLSPEC NAME light_signal_liveness := (
+    (G F (light_signal = EW_GO)) &
+    (G F (light_signal = NS_GO)) &
+    (G F (light_signal = STAY))
+  );
 
   DEFINE
     traffic_jam_threshold := 8;
@@ -57,37 +62,26 @@ MODULE main
     );
   LTLSPEC G !is_traffic_jam;
 
-  CTLSPEC NAME liveness := (
-    AG EF (road_east .cars_crossing_forward  = extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_north.cars_crossing_forward  = extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_west .cars_crossing_forward  = extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_south.cars_crossing_forward  = extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_east .cars_crossing_forward != extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_north.cars_crossing_forward != extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_west .cars_crossing_forward != extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_south.cars_crossing_forward != extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_east .cars_crossing_right    = extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_north.cars_crossing_right    = extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_west .cars_crossing_right    = extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_south.cars_crossing_right    = extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_east .cars_crossing_right   != extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_north.cars_crossing_right   != extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_west .cars_crossing_right   != extend(0ub_0, tick_cross_max - 1)) &
-    AG EF (road_south.cars_crossing_right   != extend(0ub_0, tick_cross_max - 1))
+  CTLSPEC NAME crossroad_liveness := (
+    AG EF (road_east .cars_crossing_forward  = zero) &
+    AG EF (road_north.cars_crossing_forward  = zero) &
+    AG EF (road_west .cars_crossing_forward  = zero) &
+    AG EF (road_south.cars_crossing_forward  = zero) &
+    AG EF (road_east .cars_crossing_forward != zero) &
+    AG EF (road_north.cars_crossing_forward != zero) &
+    AG EF (road_west .cars_crossing_forward != zero) &
+    AG EF (road_south.cars_crossing_forward != zero) &
+    AG EF (road_east .cars_crossing_right    = zero) &
+    AG EF (road_north.cars_crossing_right    = zero) &
+    AG EF (road_west .cars_crossing_right    = zero) &
+    AG EF (road_south.cars_crossing_right    = zero) &
+    AG EF (road_east .cars_crossing_right   != zero) &
+    AG EF (road_north.cars_crossing_right   != zero) &
+    AG EF (road_west .cars_crossing_right   != zero) &
+    AG EF (road_south.cars_crossing_right   != zero)
   );
 
   DEFINE
-    is_forward_left_conflict := (
-      road_east .is_forward_left_conflict |
-      road_north.is_forward_left_conflict |
-      road_west .is_forward_left_conflict |
-      road_south.is_forward_left_conflict
-    );
-  LTLSPEC G !is_forward_left_conflict;
-
-  DEFINE
-    zero := extend(0ub_0, tick_cross_max - 1);
-
     cars_crossing_horizontally := (
       road_east.cars_crossing_forward |
       road_west.cars_crossing_forward
@@ -103,12 +97,16 @@ MODULE main
       ((road_west.cars_crossing_forward  != zero) & (cars_crossing_vertically   != zero)) |
       ((road_north.cars_crossing_forward != zero) & (cars_crossing_horizontally != zero)) |
       ((road_south.cars_crossing_forward != zero) & (cars_crossing_horizontally != zero)) |
-      (road_east .is_in_enemy_danger) |
-      (road_west .is_in_enemy_danger) |
-      (road_north.is_in_enemy_danger) |
-      (road_south.is_in_enemy_danger)
+      road_east .is_in_enemy_danger |
+      road_west .is_in_enemy_danger |
+      road_north.is_in_enemy_danger |
+      road_south.is_in_enemy_danger |
+      road_east .is_forward_left_conflict |
+      road_north.is_forward_left_conflict |
+      road_west .is_forward_left_conflict |
+      road_south.is_forward_left_conflict
     );
-    LTLSPEC G !is_dangerous;
+  LTLSPEC G !is_dangerous;
 
 MODULE road(side, light_signal, tick_cross_max, enemy_road)
   DEFINE
