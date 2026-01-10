@@ -168,8 +168,7 @@ MODULE road(side, light_signal, tick_cross_max, enemy_road)
     );
 
     is_in_enemy_danger := (
-      (enemy_road.cars_crossing_forward & cars_crossing_right)
-        != zero
+      (enemy_road.cars_crossing_forward & cars_crossing_right) != zero
     );
 
   ASSIGN
