@@ -10,8 +10,9 @@ import pygame
 
 DELTA_SPEED = 1
 A_BRAKE = 8
-MAX_SPEED_USER = 8 * DELTA_SPEED
-MAX_SPEED_WORLD = 24 * DELTA_SPEED
+A_ENGINE_LIMIT = A_BRAKE
+V_MAX_USER = 16 * A_ENGINE_LIMIT
+MAX_SPEED_WORLD = 4 * V_MAX_USER
 SCREEN_W = 800
 SCREEN_H = 400
 CAR_R = 15
@@ -35,10 +36,10 @@ Target = Union[Velocity, Acceleration]
 
 class User(NamedTuple):
     target: Target
-    brake: int = 0
+    brake: float = 0.0
 
     @property
-    def k_brake(self) -> int:
+    def k_brake(self) -> float:
         return self.brake
 
     @property
@@ -57,7 +58,7 @@ class User(NamedTuple):
         pygame.event.pump()
         keys = pygame.key.get_pressed()
         t = self.target
-        brake = 1 if keys[pygame.K_s] else 0
+        brake = 1.0 if keys[pygame.K_s] else 0.0
 
         if keys[pygame.K_w]:
             if isinstance(t, Acceleration):
@@ -66,14 +67,14 @@ class User(NamedTuple):
                 t = Acceleration(0)
         elif keys[pygame.K_a]:
             if isinstance(t, Acceleration):
-                t = Acceleration(max(0, min(MAX_SPEED_USER, t.value - DELTA_SPEED)))
+                t = Acceleration(max(0, min(A_BRAKE, t.value - DELTA_SPEED)))
             else:
-                t = Velocity(max(0, min(MAX_SPEED_USER, t.value - DELTA_SPEED)))
+                t = Velocity(max(0, min(V_MAX_USER, t.value - DELTA_SPEED)))
         elif keys[pygame.K_d]:
             if isinstance(t, Acceleration):
-                t = Acceleration(max(0, min(MAX_SPEED_USER, t.value + DELTA_SPEED)))
+                t = Acceleration(max(0, min(A_BRAKE, t.value + DELTA_SPEED)))
             else:
-                t = Velocity(max(0, min(MAX_SPEED_USER, t.value + DELTA_SPEED)))
+                t = Velocity(max(0, min(V_MAX_USER, t.value + DELTA_SPEED)))
         else:
             t = self.target
 
@@ -97,34 +98,60 @@ class Env(NamedTuple):
 class Car(NamedTuple):
     user: User
     env: Env
-    prev: Car | None = None
+    prev: Car | None
+    engine_a_target: int
     x: int = 0
     velocity: int = 0
     acceleration: int = 0
-    brake: int = 0
+    brake: float = 0.0
 
     @property
     def a_target_effective(self) -> int:
-        if isinstance(self.user.target, Acceleration):
-            return max(0, self.user.target.value)
-        raise NotImplementedError("velocity field is dummy (always 0)")
+        return self.engine_a_target
 
     @property
     def a_output(self) -> int:
-        return self.a_target_effective - self.user.brake * A_BRAKE
+        return min(A_ENGINE_LIMIT, self.engine_a_target) - self.user.k_brake * A_BRAKE
+
+    def _cruise_a_target(self) -> int:
+        assert isinstance(self.user.target, Velocity)
+        vt = self.user.target.value
+        v = self.velocity
+        if vt > v:
+            a_t = max(0, vt - v)
+        elif vt < v:
+            a_t = int((v - vt) / A_BRAKE)
+        else:
+            a_t = 0
+
+        if self.prev is not None:
+            if (
+                self.prev.velocity == self.velocity == 0
+                and self.prev.user.k_brake == self.user.k_brake == 0.0
+            ):
+                a_t += 1
+
+        return a_t
 
     def next(self) -> Car:
-        a_current = self.a_output - self.env.resistance_acceleration
+        if isinstance(self.user.target, Acceleration):
+            a_t = self.user.target.value
+        else:
+            a_t = self._cruise_a_target()
+
+        a_out = min(A_ENGINE_LIMIT, a_t) - self.user.k_brake * A_BRAKE
+        a_current = a_out - self.env.resistance_acceleration
         v1 = min(MAX_SPEED_WORLD, max(0, self.velocity + a_current))
         x1 = self.x + v1
         return Car(
             user=self.user,
             env=self.env,
-            prev=self._replace(prev=None),
+            prev=self,
+            engine_a_target=a_t,
             x=x1,
             velocity=v1,
             acceleration=a_current,
-            brake=self.user.brake,
+            brake=self.user.k_brake,
         )
 
 
@@ -136,7 +163,8 @@ class State(NamedTuple):
     def next(self) -> State:
         user = self.user.next()
         env = self.env.next()
-        car = self.car.next()._replace(user=user, env=self.env)
+        car_in = self.car._replace(user=user, env=env)
+        car = car_in.next()
         return State(user=user, car=car, env=env)
 
 
@@ -150,13 +178,13 @@ def report(state: State) -> None:
     clear_terminal()
     lines = [
         "=== Cruise simulation ===",
-        f"User.target: {u.target!r}  brake(k_brake)={u.k_brake}",
+        f"User.target: {u.target!r}  k_brake={u.k_brake}",
         f"  a_target (manual): {u.a_target!r}   v_target (cruise): {u.v_target!r}",
-        f"Car: x={c.x}  velocity(dummy)={c.velocity}  step_speed={c.acceleration}  "
-        f"a_current={c.acceleration}  brake={c.brake}",
-        f"Engine: a_target_effective={c.a_target_effective}  a_output={c.a_output}",
-        f"Env: resistance_acceleration={e.resistance_acceleration}  "
-        f"(target cap A/D: MAX_SPEED={MAX_SPEED_USER}, DELTA_SPEED={DELTA_SPEED})",
+        f"Car: x={c.x}  v={c.velocity}  a_current={c.acceleration}  car.brake={c.brake}",
+        f"  engine_a_target (input)={c.engine_a_target}  a_output={c.a_output}  "
+        f"(a_engine_limit={A_ENGINE_LIMIT}, a_brake={A_BRAKE})",
+        f"Env: a_env={e.resistance_acceleration}  "
+        f"(target cap A/D: MAX_SPEED_USER={V_MAX_USER}, DELTA_SPEED={DELTA_SPEED})",
         "Keys: A/D target  W mode  S brake  Q/E env resistance",
     ]
     print("\n".join(lines))
@@ -188,9 +216,9 @@ def main() -> None:
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
     clock = pygame.time.Clock()
 
-    u0 = User(target=Acceleration(0), brake=0)
+    u0 = User(target=Acceleration(0), brake=0.0)
     env0 = Env(resistance_acceleration=2)
-    car0 = Car(u0, env0)
+    car0 = Car(u0, env0, prev=None, engine_a_target=0, brake=0.0)
     state = State(u0, car0, env0)
 
     try:

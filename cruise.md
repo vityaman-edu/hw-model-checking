@@ -3,7 +3,7 @@
 ## Theoretic Model
 
 There is a user. User has 2 variables:
-- `k_brake:    0 | 1   ` - intent to stop.
+- `k_brake:  float in [0, 1]` - intent to stop.
 - `a_target: int | None` - acceleration it wants car to move with.
 - `v_target: int | None` - velocity it wants car to move with.
 
@@ -12,8 +12,10 @@ croise control system is on, `a_target` should be disabled, so
 user can't set it. Instead it uses `v_target`, but still can stop a
 car via `k_brake`.
 
-There is a parameter `a_brake` is an inversed acceleration of brakes.
-An engine produces `a_output = max(0, a_target - k_brake * a_brake)`.
+There is a parameter `a_brake` is an inversed acceleration of
+brakes. There is a `a_engine_limit`, so engine can't produce
+an acceleration higher that this one. An engine produces
+`a_output = max(0, min(a_engine_limit, a_target) - k_brake * a_brake)`.
 
 Also environment inversed acceleration `a_env` exists, so it also
 makes car slower, and it is unknown for a user and a croise control
@@ -24,7 +26,19 @@ Current velocity `v1` is computed as `v1 = v0 + a_current`, where
 
 Current position `x1` is computed as `x1 = x0 + v1`.
 
+How cruise control system works.
 
+It remembers previous car state `prev`.
+It knowns current car `velocity` and `v_target`, so it sets `a_target`
+input for `a_output` formula to `max(0, v_target - velocity)` if
+`v_target > velocity` or `(velocity - v_target) / a_brake` if
+`v_target < velocity`.
+
+Also here is the trick if user wants low `v_target` and `a_resistance` is
+higher than `a_target` is computed without this knowledge, so car will not
+move. To fix it, when `prev.velocity == self.velocity == 0` and
+`prev.k_brake = self.k_brake = 0`, then `a_target` is incremented by 1,
+so car now also stores its `a_target` computed at previous state.
 
 ## Python Model
 
