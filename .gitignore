@@ -1,2 +1,8 @@
 # JetBrains
 .idea/
+
+# nuXmv
+nuXmv
+
+# Python
+venv/
