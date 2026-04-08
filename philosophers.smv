@@ -1,9 +1,10 @@
 MODULE main
-  DEFINE n := 5;
+  DEFINE
+    n := 5;
 
   VAR
-    states : array 0 .. 4 of { THINKING, HUNGRY, LEFTFORK, EATING, FULL, RIGHTFORK };
-    forks  : array 0 .. 4 of { FREE, BUSY };
+    states : array 0..4 of {THINKING, HUNGRY, LEFTFORK, EATING, FULL, RIGHTFORK};
+    forks : array 0..4 of {FREE, BUSY};
 
     ph_0 : process philosopher(0, n, states, forks);
     ph_1 : process philosopher(1, n, states, forks);
@@ -19,40 +20,39 @@ MODULE main
     init(forks[4]) := FREE;
 
   FAIRNESS running
+  LTLSPEC NAME deadlock_check :=
+    !F G (
+      ((states[0] = HUNGRY) | (states[0] = LEFTFORK)) &
+      ((states[1] = HUNGRY) | (states[1] = LEFTFORK)) &
+      ((states[2] = HUNGRY) | (states[2] = LEFTFORK)) &
+      ((states[3] = HUNGRY) | (states[3] = LEFTFORK)) &
+      ((states[4] = HUNGRY) | (states[4] = LEFTFORK))
+    );
 
-LTLSPEC NAME deadlock_check :=
-  !F G (
-    ((states[0] = HUNGRY) | (states[0] = LEFTFORK)) &
-    ((states[1] = HUNGRY) | (states[1] = LEFTFORK)) &
-    ((states[2] = HUNGRY) | (states[2] = LEFTFORK)) &
-    ((states[3] = HUNGRY) | (states[3] = LEFTFORK)) &
-    ((states[4] = HUNGRY) | (states[4] = LEFTFORK))
-  );
+  CTLSPEC NAME liveness :=
+    AG (
+      (states[0] = HUNGRY -> AF states[0] = EATING) &
+      (states[1] = HUNGRY -> AF states[1] = EATING) &
+      (states[2] = HUNGRY -> AF states[2] = EATING) &
+      (states[3] = HUNGRY -> AF states[3] = EATING) &
+      (states[4] = HUNGRY -> AF states[4] = EATING)
+    );
 
-CTLSPEC NAME liveness :=
-  AG (
-    (states[0] = HUNGRY -> AF states[0] = EATING) &
-    (states[1] = HUNGRY -> AF states[1] = EATING) &
-    (states[2] = HUNGRY -> AF states[2] = EATING) &
-    (states[3] = HUNGRY -> AF states[3] = EATING) &
-    (states[4] = HUNGRY -> AF states[4] = EATING)
-  );
+  CTLSPEC NAME mutual_exclusion :=
+    AG !(
+      (states[0] = EATING & states[1] = EATING) |
+      (states[1] = EATING & states[2] = EATING) |
+      (states[2] = EATING & states[3] = EATING) |
+      (states[3] = EATING & states[4] = EATING) |
+      (states[4] = EATING & states[0] = EATING)
+    );
 
-CTLSPEC NAME mutual_exclusion :=
-  AG !(
-    (states[0] = EATING & states[1] = EATING) |
-    (states[1] = EATING & states[2] = EATING) |
-    (states[2] = EATING & states[3] = EATING) |
-    (states[3] = EATING & states[4] = EATING) |
-    (states[4] = EATING & states[0] = EATING)
-  );
-
-CTLSPEC NAME concurrency_possible :=
+  CTLSPEC NAME concurrency_possible :=
     AG EF (states[0] = EATING & states[2] = EATING);
 
-MODULE philosopher (i, n, states, forks)
+MODULE philosopher(i, n, states, forks)
   DEFINE
-    left  := i;
+    left := i;
     right := (i + 1) mod n;
     state := states[i];
 
@@ -60,23 +60,23 @@ MODULE philosopher (i, n, states, forks)
     init(states[i]) := THINKING;
 
     next(states[i]) := case
-      state = THINKING                          : {THINKING, HUNGRY};
-      state = HUNGRY   & forks[left] = FREE     : LEFTFORK;
-      state = LEFTFORK & forks[right] = FREE    : EATING;
-      state = EATING                            : FULL;
-      state = FULL                              : RIGHTFORK;
-      state = RIGHTFORK                         : THINKING;
-      TRUE                                      : state;
+      state = THINKING : {THINKING, HUNGRY};
+      state = HUNGRY & forks[left] = FREE : LEFTFORK;
+      state = LEFTFORK & forks[right] = FREE : EATING;
+      state = EATING : FULL;
+      state = FULL : RIGHTFORK;
+      state = RIGHTFORK : THINKING;
+      TRUE : state;
     esac;
 
     next(forks[left]) := case
       (state = HUNGRY & forks[left] = FREE) : BUSY;
-      state = FULL                          : FREE;
-      TRUE                                  : forks[left];
+      state = FULL : FREE;
+      TRUE : forks[left];
     esac;
 
     next(forks[right]) := case
       (state = LEFTFORK & forks[right] = FREE) : BUSY;
-      state = RIGHTFORK                        : FREE;
-      TRUE                                     : forks[right];
+      state = RIGHTFORK : FREE;
+      TRUE : forks[right];
     esac;
