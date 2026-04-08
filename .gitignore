@@ -6,3 +6,4 @@ nuXmv
 
 # Python
 venv/
+__pycache__/

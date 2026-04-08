@@ -1,191 +1,207 @@
-import pygame
-import math
-import sys
-import os
+"""
+Discrete cruise / manual driving model (see cruise.md).
+"""
+from __future__ import annotations
 
-SCREEN_WIDTH = 1000
-SCREEN_HEIGHT = 600
+import sys
+from typing import NamedTuple, Union
+
+import pygame
+
+DELTA_SPEED = 1
+A_BRAKE = 8
+MAX_SPEED_USER = 8 * DELTA_SPEED
+MAX_SPEED_WORLD = 24 * DELTA_SPEED
+SCREEN_W = 800
+SCREEN_H = 400
+CAR_R = 15
+BG_COLOR = (28, 28, 28)
+CAR_COLOR = (230, 230, 230)
+CAR_PREV_COLOR = (72, 72, 72)
+Y_CENTER = SCREEN_H // 2
 FPS = 60
 
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-GREEN = (0, 255, 0)
-RED = (255, 0, 0)
-GRAY = (100, 100, 100)
-DARK_GRAY = (50, 50, 50)
-LIGHT_BLUE = (173, 216, 230)
 
-CAR_RADIUS = 20
-CAR_COLOR = GREEN
-ROAD_LINE_COLOR = DARK_GRAY
-ROAD_Y = SCREEN_HEIGHT // 2
-
-G = 9.81
-CAR_MASS = 800
-DT = 1.0 / FPS
-
-ENGINE_KONSTANT_K = 200
-ENGINE_MAX_FORCE = 8000
-MAX_TARGET_SPEED = 50.0
-MIN_TARGET_SPEED = 0.0
-
-BRAKE_MAX_FORCE = 15000
-
-AIR_DRAG_K = 0.4
-ROLLING_RESISTANCE_K = 70
-
-WHEEL_RADIUS = 0.3
-
-MAX_ROAD_ANGLE_DEGREES = 10
-ROAD_ANGLE_STEP = 0.5
+class Acceleration(NamedTuple):
+    value: int = 0
 
 
-def sign(value):
-    if value > 0:
-        return 1
-    elif value < 0:
-        return -1
-    else:
-        return 0
+class Velocity(NamedTuple):
+    value: int = 0
 
 
-pygame.init()
-
-pygame.display.set_caption("Автомобильная симуляция")
-screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-clock = pygame.time.Clock()
-
-running = True
-
-car_x = SCREEN_WIDTH // 4
-car_v = 0.0
-target_engine_speed = 0.0
-brake_input = 0.0
-road_angle_degrees = 0.0
-road_angle_radians = math.radians(road_angle_degrees)
+Target = Union[Velocity, Acceleration]
 
 
-def keyboard():
-    global running
-    global brake_input
-    global target_engine_speed
-    global road_angle_degrees
-    global road_angle_radians
+class User(NamedTuple):
+    target: Target
+    brake: int = 0
 
+    @property
+    def k_brake(self) -> int:
+        return self.brake
+
+    @property
+    def a_target(self) -> int | None:
+        if isinstance(self.target, Acceleration):
+            return self.target.value
+        return None
+
+    @property
+    def v_target(self) -> int | None:
+        if isinstance(self.target, Velocity):
+            return self.target.value
+        return None
+
+    def next(self) -> User:
+        pygame.event.pump()
+        keys = pygame.key.get_pressed()
+        t = self.target
+        brake = 1 if keys[pygame.K_s] else 0
+
+        if keys[pygame.K_w]:
+            if isinstance(t, Acceleration):
+                t = Velocity(0)
+            else:
+                t = Acceleration(0)
+        elif keys[pygame.K_a]:
+            if isinstance(t, Acceleration):
+                t = Acceleration(max(0, min(MAX_SPEED_USER, t.value - DELTA_SPEED)))
+            else:
+                t = Velocity(max(0, min(MAX_SPEED_USER, t.value - DELTA_SPEED)))
+        elif keys[pygame.K_d]:
+            if isinstance(t, Acceleration):
+                t = Acceleration(max(0, min(MAX_SPEED_USER, t.value + DELTA_SPEED)))
+            else:
+                t = Velocity(max(0, min(MAX_SPEED_USER, t.value + DELTA_SPEED)))
+        else:
+            t = self.target
+
+        return User(target=t, brake=brake)
+
+
+class Env(NamedTuple):
+    resistance_acceleration: int = 2
+
+    def next(self) -> Env:
+        pygame.event.pump()
+        keys = pygame.key.get_pressed()
+        ra = self.resistance_acceleration
+        if keys[pygame.K_q]:
+            ra -= DELTA_SPEED
+        if keys[pygame.K_e]:
+            ra += DELTA_SPEED
+        return Env(resistance_acceleration=max(0, ra))
+
+
+class Car(NamedTuple):
+    user: User
+    env: Env
+    prev: Car | None = None
+    x: int = 0
+    velocity: int = 0
+    acceleration: int = 0
+    brake: int = 0
+
+    @property
+    def a_target_effective(self) -> int:
+        if isinstance(self.user.target, Acceleration):
+            return max(0, self.user.target.value)
+        raise NotImplementedError("velocity field is dummy (always 0)")
+
+    @property
+    def a_output(self) -> int:
+        return self.a_target_effective - self.user.brake * A_BRAKE
+
+    def next(self) -> Car:
+        a_current = self.a_output - self.env.resistance_acceleration
+        v1 = min(MAX_SPEED_WORLD, max(0, self.velocity + a_current))
+        x1 = self.x + v1
+        return Car(
+            user=self.user,
+            env=self.env,
+            prev=self._replace(prev=None),
+            x=x1,
+            velocity=v1,
+            acceleration=a_current,
+            brake=self.user.brake,
+        )
+
+
+class State(NamedTuple):
+    user: User
+    car: Car
+    env: Env
+
+    def next(self) -> State:
+        user = self.user.next()
+        env = self.env.next()
+        car = self.car.next()._replace(user=user, env=self.env)
+        return State(user=user, car=car, env=env)
+
+
+def clear_terminal() -> None:
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
+
+
+def report(state: State) -> None:
+    u, c, e = state.user, state.car, state.env
+    clear_terminal()
+    lines = [
+        "=== Cruise simulation ===",
+        f"User.target: {u.target!r}  brake(k_brake)={u.k_brake}",
+        f"  a_target (manual): {u.a_target!r}   v_target (cruise): {u.v_target!r}",
+        f"Car: x={c.x}  velocity(dummy)={c.velocity}  step_speed={c.acceleration}  "
+        f"a_current={c.acceleration}  brake={c.brake}",
+        f"Engine: a_target_effective={c.a_target_effective}  a_output={c.a_output}",
+        f"Env: resistance_acceleration={e.resistance_acceleration}  "
+        f"(target cap A/D: MAX_SPEED={MAX_SPEED_USER}, DELTA_SPEED={DELTA_SPEED})",
+        "Keys: A/D target  W mode  S brake  Q/E env resistance",
+    ]
+    print("\n".join(lines))
+
+
+def draw(screen: pygame.Surface, state: State) -> None:
+    screen.fill(BG_COLOR)
+
+    if state.car.prev is not None:
+        x_prev = state.car.prev.x % SCREEN_W
+        pygame.draw.circle(screen, CAR_PREV_COLOR, (int(x_prev), Y_CENTER), CAR_R)
+
+    x_curr = state.car.x % SCREEN_W
+    pygame.draw.circle(screen, CAR_COLOR, (int(x_curr), Y_CENTER), CAR_R)
+
+    pygame.display.flip()
+
+
+def is_running() -> bool:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            running = False
-
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_SPACE:
-                brake_input = 1.0
-            if event.key == pygame.K_ESCAPE:
-                running = False
-        if event.type == pygame.KEYUP:
-            if event.key == pygame.K_SPACE:
-                brake_input = 0.0
-
-    keys = pygame.key.get_pressed()
-    if keys[pygame.K_UP]:
-        target_engine_speed += 0.5 * DT * FPS
-        target_engine_speed = min(target_engine_speed, MAX_TARGET_SPEED)
-    if keys[pygame.K_DOWN]:
-        target_engine_speed -= 0.5 * DT * FPS
-        target_engine_speed = max(target_engine_speed, MIN_TARGET_SPEED)
-
-    if keys[pygame.K_RIGHT]:
-        road_angle_degrees += ROAD_ANGLE_STEP
-        road_angle_degrees = min(road_angle_degrees, MAX_ROAD_ANGLE_DEGREES)
-        road_angle_radians = math.radians(road_angle_degrees)
-    if keys[pygame.K_LEFT]:
-        road_angle_degrees -= ROAD_ANGLE_STEP
-        road_angle_degrees = max(road_angle_degrees, -MAX_ROAD_ANGLE_DEGREES)
-        road_angle_radians = math.radians(road_angle_degrees)
+            return False
+    return True
 
 
-def physics():
-    global car_x
-    global car_v
-    global target_engine_speed
-    global brake_input
-    global road_angle_degrees
-    global road_angle_radians
+def main() -> None:
+    pygame.init()
+    pygame.display.set_caption("Cruise")
+    screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+    clock = pygame.time.Clock()
 
-    F_engine = 0.0
-    if target_engine_speed > car_v:
-        F_engine_raw = ENGINE_KONSTANT_K * (target_engine_speed - car_v)
-        F_engine = min(F_engine_raw, ENGINE_MAX_FORCE)
+    u0 = User(target=Acceleration(0), brake=0)
+    env0 = Env(resistance_acceleration=2)
+    car0 = Car(u0, env0)
+    state = State(u0, car0, env0)
 
-    F_brake = 0.0
-    if car_v != 0:
-        brake_magnitude = brake_input * BRAKE_MAX_FORCE
-        F_brake = -sign(car_v) * brake_magnitude
-
-    F_air_drag = 0.0
-    if car_v != 0:
-        F_air_drag = -sign(car_v) * AIR_DRAG_K * car_v**2
-
-    F_rolling_resistance = 0.0
-    if car_v != 0:
-        F_rolling_resistance = -sign(car_v) * ROLLING_RESISTANCE_K * abs(car_v)
-
-    F_gravity = -CAR_MASS * G * math.sin(road_angle_radians)
-
-    F_net = F_engine + F_brake + F_air_drag + F_rolling_resistance + F_gravity
-
-    acceleration = F_net / CAR_MASS
-
-    car_v_old = car_v
-    car_v += acceleration * DT
-
-    if (abs(car_v) < 0.1 and sign(car_v_old) != sign(car_v)) or (
-        abs(car_v) < 0.01 and F_net < 100 and F_net > -100
-    ):
-        car_v = 0.0
-
-    car_x += car_v * DT * 50
-
-    if car_x > SCREEN_WIDTH + CAR_RADIUS:
-        car_x = -CAR_RADIUS
-
-    if car_x < -CAR_RADIUS:
-        car_x = SCREEN_WIDTH + CAR_RADIUS
+    try:
+        while is_running():
+            report(state)
+            draw(screen, state)
+            state = state.next()
+            clock.tick(FPS)
+    finally:
+        pygame.quit()
 
 
-def draw():
-    screen.fill(LIGHT_BLUE)
-    pygame.draw.line(screen, ROAD_LINE_COLOR, (0, ROAD_Y), (SCREEN_WIDTH, ROAD_Y), 5)
-    pygame.draw.circle(screen, CAR_COLOR, (int(car_x), ROAD_Y), CAR_RADIUS)
-    pygame.display.flip()
-    clock.tick(FPS)
-
-
-def debug():
-    current_speed_kmh = car_v * 3.6
-    target_speed_kmh = target_engine_speed * 3.6
-    text_lines = [
-        f"Текущая скорость: {current_speed_kmh:.1f} км/ч",
-        f"Целевая скорость двигателя: {target_speed_kmh:.1f} км/ч",
-        f"Угол дороги: {road_angle_degrees:.1f}°",
-        f"Тормоз нажат: {'Да' if brake_input > 0 else 'Нет'}",
-        "",
-        "Управление:",
-        "  [↑] [↓] - Изменить целевую скорость двигателя",
-        "  [←] [→] - Изменить угол наклона дороги",
-        "  [Space] - Тормоз на максимум",
-        "  [Esc] - Выход",
-    ]
-
-    os.system("cls" if os.name == "nt" else "clear")
-    for line in text_lines:
-        print(line)
-
-
-while running:
-    keyboard()
-    physics()
-    draw()
-    debug()
-
-pygame.quit()
-sys.exit()
+if __name__ == "__main__":
+    main()
