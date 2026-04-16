@@ -13,9 +13,6 @@ PYGAME_COLOR_ENEMY = (127, 127, 255)
 PYGAME_Y_CENTER = PYGAME_HEIGHT // 2
 PYGAME_R_ENTITY = 8
 
-SIM_V = 10
-SIM_V_MAX = 32
-SIM_A_MAX = 32
 SIM_CAR_A_FORWARD = 4
 SIM_CAR_A_BRAKE = 6
 SIM_CAR_A_MAX = SIM_CAR_A_BRAKE // 2
@@ -123,7 +120,7 @@ class Car(Entity):
         return Car(
             c=self.c.next(),
             x=self.x + self.v,
-            v=max(0, min(SIM_V_MAX, self.v + self.a)),
+            v=max(0, self.v + self.a),
             color=self.color,
         )
 
@@ -149,37 +146,13 @@ class Cruise(Entity):
     def next(self) -> "Cruise":
         assert self.this.x < self.that.x
 
-        d = self.that.x - self.this.x
-        d_min = 2 * PYGAME_R_ENTITY
+        d = max(0, self.that.x - self.this.x - self.this.v - 16)
+        a_smooth = 1.0 * SIM_CAR_A_BRAKE
+        v_target = max(0, math.sqrt(2 * a_smooth * d) - a_smooth / 2)
+        a_req = v_target - self.this.v
 
-        v_safe = math.sqrt(2 * SIM_CAR_A_BRAKE * max(0, d - d_min)) / 2
-        v_target = v_safe
-        v = float(self.this.v)
-
-        if v_target > v:
-            k_accel = min(1.0, (v_target - v) / SIM_CAR_A_FORWARD)
-            k_brake = 0.0
-        elif v_target < v:
-            k_accel = 0.0
-            k_brake = min(1.0, (v - v_target) / SIM_CAR_A_BRAKE)
-        else:
-            k_accel = 0.0
-            k_brake = 0.0
-
-        if d < 2 * d_min:
-            k_accel = 0.0
-            k_brake = 1.0
-        elif 8 * d_min < d:
-            k_accel = min(1.0, k_accel + 0.05)
-            k_brake = 0.0
-
-        if (
-            self.prev.v == 0
-            and self.this.v == 0
-            and self.prev.c.k_brake == 0.0
-            and self.this.c.k_brake == 0.0
-        ):
-            k_accel = min(1.0, k_accel + 1.0)
+        k_accel = max(0.0, min(1.0, +a_req / SIM_CAR_A_FORWARD))
+        k_brake = max(0.0, min(1.0, -a_req / SIM_CAR_A_BRAKE))
 
         return Cruise(
             prev=self.this,

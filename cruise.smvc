@@ -1,0 +1,6 @@
+go_msat
+msat_check_ltlspec_bmc -P "safety" -k 10
+msat_check_ltlspec_bmc -P "liveness" -k 10
+msat_check_ltlspec_bmc -P "liveness500" -k 50
+msat_check_ltlspec_bmc -P "liveness1000" -k 50
+msat_check_ltlspec_bmc -P "liveness1500" -k 50
