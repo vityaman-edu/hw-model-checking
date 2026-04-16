@@ -1,205 +1,206 @@
-"""
-Discrete cruise / manual driving model (see cruise.md).
-"""
-from __future__ import annotations
-
-import sys
-from typing import NamedTuple, Union
+from abc import abstractmethod
+import math
+from typing import Self, override
 
 import pygame
 
-DELTA_SPEED = 1
-A_BRAKE = 8
-A_ENGINE_LIMIT = A_BRAKE
-V_MAX_USER = 16 * A_ENGINE_LIMIT
-MAX_SPEED_WORLD = 4 * V_MAX_USER
-SCREEN_W = 800
-SCREEN_H = 400
-CAR_R = 15
-BG_COLOR = (28, 28, 28)
-CAR_COLOR = (230, 230, 230)
-CAR_PREV_COLOR = (72, 72, 72)
-Y_CENTER = SCREEN_H // 2
-FPS = 60
+PYGAME_FPS = 60
+PYGAME_WIDTH = 1024 + 512
+PYGAME_HEIGHT = 256
+PYGAME_COLOR_BG = (0, 0, 0)
+PYGAME_COLOR_PLAYER = (127, 255, 127)
+PYGAME_COLOR_ENEMY = (127, 127, 255)
+PYGAME_Y_CENTER = PYGAME_HEIGHT // 2
+PYGAME_R_ENTITY = 8
+
+SIM_V = 10
+SIM_V_MAX = 32
+SIM_A_MAX = 32
+SIM_CAR_A_FORWARD = 4
+SIM_CAR_A_BRAKE = 6
+SIM_CAR_A_MAX = SIM_CAR_A_BRAKE // 2
 
 
-class Acceleration(NamedTuple):
-    value: int = 0
+class Entity:
+    @abstractmethod
+    def next(self) -> Self:
+        raise NotImplementedError
+
+    @abstractmethod
+    def draw(self, surface: pygame.Surface) -> None:
+        raise NotImplementedError
 
 
-class Velocity(NamedTuple):
-    value: int = 0
-
-
-Target = Union[Velocity, Acceleration]
-
-
-class User(NamedTuple):
-    target: Target
-    brake: float = 0.0
-
-    @property
-    def k_brake(self) -> float:
-        return self.brake
-
-    @property
-    def a_target(self) -> int | None:
-        if isinstance(self.target, Acceleration):
-            return self.target.value
-        return None
+class CarControl(Entity):
+    def __init__(
+        self,
+        k_accel: float = 0.0,
+        k_brake: float = 0.0,
+    ) -> None:
+        self.k_accel = k_accel
+        self.k_brake = k_brake
 
     @property
-    def v_target(self) -> int | None:
-        if isinstance(self.target, Velocity):
-            return self.target.value
-        return None
+    def a(self) -> int:
+        a_forward = int(self.k_accel * SIM_CAR_A_FORWARD)
+        a_brake = int(self.k_brake * SIM_CAR_A_BRAKE)
+        return min(SIM_CAR_A_MAX, a_forward - a_brake)
 
-    def next(self) -> User:
-        pygame.event.pump()
-        keys = pygame.key.get_pressed()
-        t = self.target
-        brake = 1.0 if keys[pygame.K_s] else 0.0
-
-        if keys[pygame.K_w]:
-            if isinstance(t, Acceleration):
-                t = Velocity(0)
-            else:
-                t = Acceleration(0)
-        elif keys[pygame.K_a]:
-            if isinstance(t, Acceleration):
-                t = Acceleration(max(0, min(A_BRAKE, t.value - DELTA_SPEED)))
-            else:
-                t = Velocity(max(0, min(V_MAX_USER, t.value - DELTA_SPEED)))
-        elif keys[pygame.K_d]:
-            if isinstance(t, Acceleration):
-                t = Acceleration(max(0, min(A_BRAKE, t.value + DELTA_SPEED)))
-            else:
-                t = Velocity(max(0, min(V_MAX_USER, t.value + DELTA_SPEED)))
-        else:
-            t = self.target
-
-        return User(target=t, brake=brake)
-
-
-class Env(NamedTuple):
-    resistance_acceleration: int = 2
-
-    def next(self) -> Env:
-        pygame.event.pump()
-        keys = pygame.key.get_pressed()
-        ra = self.resistance_acceleration
-        if keys[pygame.K_q]:
-            ra -= DELTA_SPEED
-        if keys[pygame.K_e]:
-            ra += DELTA_SPEED
-        return Env(resistance_acceleration=max(0, ra))
-
-
-class Car(NamedTuple):
-    user: User
-    env: Env
-    prev: Car | None
-    engine_a_target: int
-    x: int = 0
-    velocity: int = 0
-    acceleration: int = 0
-    brake: float = 0.0
-
-    @property
-    def a_target_effective(self) -> int:
-        return self.engine_a_target
-
-    @property
-    def a_output(self) -> int:
-        return min(A_ENGINE_LIMIT, self.engine_a_target) - self.user.k_brake * A_BRAKE
-
-    def _cruise_a_target(self) -> int:
-        assert isinstance(self.user.target, Velocity)
-        vt = self.user.target.value
-        v = self.velocity
-        if vt > v:
-            a_t = max(0, vt - v)
-        elif vt < v:
-            a_t = int((v - vt) / A_BRAKE)
-        else:
-            a_t = 0
-
-        if self.prev is not None:
-            if (
-                self.prev.velocity == self.velocity == 0
-                and self.prev.user.k_brake == self.user.k_brake == 0.0
-            ):
-                a_t += 1
-
-        return a_t
-
-    def next(self) -> Car:
-        if isinstance(self.user.target, Acceleration):
-            a_t = self.user.target.value
-        else:
-            a_t = self._cruise_a_target()
-
-        a_out = min(A_ENGINE_LIMIT, a_t) - self.user.k_brake * A_BRAKE
-        a_current = a_out - self.env.resistance_acceleration
-        v1 = min(MAX_SPEED_WORLD, max(0, self.velocity + a_current))
-        x1 = self.x + v1
-        return Car(
-            user=self.user,
-            env=self.env,
-            prev=self,
-            engine_a_target=a_t,
-            x=x1,
-            velocity=v1,
-            acceleration=a_current,
-            brake=self.user.k_brake,
+    @override
+    def next(self) -> "CarControl":
+        return CarControl(
+            k_accel=self.k_accel,
+            k_brake=self.k_brake,
         )
 
-
-class State(NamedTuple):
-    user: User
-    car: Car
-    env: Env
-
-    def next(self) -> State:
-        user = self.user.next()
-        env = self.env.next()
-        car_in = self.car._replace(user=user, env=env)
-        car = car_in.next()
-        return State(user=user, car=car, env=env)
+    @override
+    def draw(self, surface: pygame.Surface) -> None:
+        pass
 
 
-def clear_terminal() -> None:
-    sys.stdout.write("\033[2J\033[H")
-    sys.stdout.flush()
+class CarKeyboard(CarControl):
+    def __init__(
+        self,
+        btn_accel_inc: int,
+        btn_accel_dec: int,
+        btn_brake: int,
+        k_accel: float = 0.0,
+        k_brake: float = 0.0,
+    ) -> None:
+        super().__init__(k_accel, k_brake)
+        self.btn_accel_inc = btn_accel_inc
+        self.btn_accel_dec = btn_accel_dec
+        self.btn_brake = btn_brake
+
+    @override
+    def next(self) -> "CarKeyboard":
+        step = 0.05
+
+        keys = pygame.key.get_pressed()
+
+        k_brake = 1.0 if keys[self.btn_brake] else 0.0
+
+        if keys[self.btn_accel_inc]:
+            k_accel = min(1.0, self.k_accel + step)
+        elif keys[self.btn_accel_dec]:
+            k_accel = max(0.0, self.k_accel - step)
+        else:
+            k_accel = self.k_accel
+
+        return CarKeyboard(
+            btn_accel_inc=self.btn_accel_inc,
+            btn_accel_dec=self.btn_accel_dec,
+            btn_brake=self.btn_brake,
+            k_accel=k_accel,
+            k_brake=k_brake,
+        )
+
+    @override
+    def draw(self, surface: pygame.Surface) -> None:
+        pass
 
 
-def report(state: State) -> None:
-    u, c, e = state.user, state.car, state.env
-    clear_terminal()
-    lines = [
-        "=== Cruise simulation ===",
-        f"User.target: {u.target!r}  k_brake={u.k_brake}",
-        f"  a_target (manual): {u.a_target!r}   v_target (cruise): {u.v_target!r}",
-        f"Car: x={c.x}  v={c.velocity}  a_current={c.acceleration}  car.brake={c.brake}",
-        f"  engine_a_target (input)={c.engine_a_target}  a_output={c.a_output}  "
-        f"(a_engine_limit={A_ENGINE_LIMIT}, a_brake={A_BRAKE})",
-        f"Env: a_env={e.resistance_acceleration}  "
-        f"(target cap A/D: MAX_SPEED_USER={V_MAX_USER}, DELTA_SPEED={DELTA_SPEED})",
-        "Keys: A/D target  W mode  S brake  Q/E env resistance",
-    ]
-    print("\n".join(lines))
+class Car(Entity):
+    def __init__(
+        self,
+        c: CarControl,
+        x: int,
+        v: int,
+        color: tuple[int, int, int],
+    ) -> None:
+        self.c = c
+        self.x = x
+        self.v = v
+        self.color = color
+
+    @property
+    def a(self) -> int:
+        return self.c.a
+
+    @override
+    def next(self) -> "Car":
+        assert 0 <= self.v
+        return Car(
+            c=self.c.next(),
+            x=self.x + self.v,
+            v=max(0, min(SIM_V_MAX, self.v + self.a)),
+            color=self.color,
+        )
+
+    @override
+    def draw(self, surface: pygame.Surface) -> None:
+        pygame.draw.circle(
+            surface,
+            self.color,
+            (self.x % PYGAME_WIDTH, PYGAME_Y_CENTER),
+            PYGAME_R_ENTITY,
+        )
+
+        self.c.draw(surface)
 
 
-def draw(screen: pygame.Surface, state: State) -> None:
-    screen.fill(BG_COLOR)
+class Cruise(Entity):
+    def __init__(self, prev: Car | None, this: Car, that: Car) -> None:
+        self.prev = prev or this
+        self.this = this
+        self.that = that
 
-    if state.car.prev is not None:
-        x_prev = state.car.prev.x % SCREEN_W
-        pygame.draw.circle(screen, CAR_PREV_COLOR, (int(x_prev), Y_CENTER), CAR_R)
+    @override
+    def next(self) -> "Cruise":
+        assert self.this.x < self.that.x
 
-    x_curr = state.car.x % SCREEN_W
-    pygame.draw.circle(screen, CAR_COLOR, (int(x_curr), Y_CENTER), CAR_R)
+        d = self.that.x - self.this.x
+        d_min = 2 * PYGAME_R_ENTITY
 
+        v_safe = math.sqrt(2 * SIM_CAR_A_BRAKE * max(0, d - d_min)) / 2
+        v_target = v_safe
+        v = float(self.this.v)
+
+        if v_target > v:
+            k_accel = min(1.0, (v_target - v) / SIM_CAR_A_FORWARD)
+            k_brake = 0.0
+        elif v_target < v:
+            k_accel = 0.0
+            k_brake = min(1.0, (v - v_target) / SIM_CAR_A_BRAKE)
+        else:
+            k_accel = 0.0
+            k_brake = 0.0
+
+        if d < 2 * d_min:
+            k_accel = 0.0
+            k_brake = 1.0
+        elif 8 * d_min < d:
+            k_accel = min(1.0, k_accel + 0.05)
+            k_brake = 0.0
+
+        if (
+            self.prev.v == 0
+            and self.this.v == 0
+            and self.prev.c.k_brake == 0.0
+            and self.this.c.k_brake == 0.0
+        ):
+            k_accel = min(1.0, k_accel + 1.0)
+
+        return Cruise(
+            prev=self.this,
+            this=Car(
+                c=CarControl(k_accel=k_accel, k_brake=k_brake),
+                x=self.this.x,
+                v=self.this.v,
+                color=self.this.color,
+            ).next(),
+            that=self.that.next(),
+        )
+
+    @override
+    def draw(self, surface: pygame.Surface) -> None:
+        self.this.draw(surface)
+        self.that.draw(surface)
+
+
+def draw(surface: pygame.Surface, e: Entity) -> None:
+    surface.fill(PYGAME_COLOR_BG)
+    e.draw(surface)
     pygame.display.flip()
 
 
@@ -212,21 +213,41 @@ def is_running() -> bool:
 
 def main() -> None:
     pygame.init()
+
     pygame.display.set_caption("Cruise")
-    screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+    surface = pygame.display.set_mode((PYGAME_WIDTH, PYGAME_HEIGHT))
+
     clock = pygame.time.Clock()
 
-    u0 = User(target=Acceleration(0), brake=0.0)
-    env0 = Env(resistance_acceleration=2)
-    car0 = Car(u0, env0, prev=None, engine_a_target=0, brake=0.0)
-    state = State(u0, car0, env0)
+    world = Cruise(
+        prev=None,
+        this=Car(
+            c=CarKeyboard(
+                btn_accel_inc=pygame.K_w,
+                btn_accel_dec=pygame.K_s,
+                btn_brake=pygame.K_a,
+            ),
+            x=10,
+            v=1,
+            color=(255, 0, 0),
+        ),
+        that=Car(
+            c=CarKeyboard(
+                btn_accel_inc=pygame.K_UP,
+                btn_accel_dec=pygame.K_DOWN,
+                btn_brake=pygame.K_LEFT,
+            ),
+            x=256,
+            v=1,
+            color=(0, 0, 255),
+        ),
+    )
 
     try:
         while is_running():
-            report(state)
-            draw(screen, state)
-            state = state.next()
-            clock.tick(FPS)
+            draw(surface, world)
+            world = world.next()
+            clock.tick(PYGAME_FPS)
     finally:
         pygame.quit()
 

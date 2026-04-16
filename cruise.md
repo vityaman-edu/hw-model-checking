@@ -37,7 +37,7 @@ input for `a_output` formula to `max(0, v_target - velocity)` if
 Also here is the trick if user wants low `v_target` and `a_resistance` is
 higher than `a_target` is computed without this knowledge, so car will not
 move. To fix it, when `prev.velocity == self.velocity == 0` and
-`prev.k_brake = self.k_brake = 0`, then `a_target` is incremented by 1,
+`prev.k_brake = self.k_brake = 0`, then `k_accel` is incremented by 1,
 so car now also stores its `a_target` computed at previous state.
 
 ## Python Model
