@@ -1,5 +1,4 @@
 from abc import abstractmethod
-import math
 from typing import Self, override
 
 import pygame
@@ -38,9 +37,17 @@ class CarControl(Entity):
         self.k_brake = k_brake
 
     @property
+    def car_a_forward(self) -> int:
+        return SIM_CAR_A_FORWARD
+
+    @property
+    def car_a_brake(self) -> int:
+        return SIM_CAR_A_BRAKE
+
+    @property
     def a(self) -> int:
-        a_forward = int(self.k_accel * SIM_CAR_A_FORWARD)
-        a_brake = int(self.k_brake * SIM_CAR_A_BRAKE)
+        a_forward = int(self.k_accel * self.car_a_forward)
+        a_brake = int(self.k_brake * self.car_a_brake)
         return min(SIM_CAR_A_MAX, a_forward - a_brake)
 
     @override
@@ -111,6 +118,10 @@ class Car(Entity):
         self.color = color
 
     @property
+    def control(self) -> CarControl:
+        return self.c
+
+    @property
     def a(self) -> int:
         return self.c.a
 
@@ -146,13 +157,21 @@ class Cruise(Entity):
     def next(self) -> "Cruise":
         assert self.this.x < self.that.x
 
-        d = max(0, self.that.x - self.this.x - self.this.v - 16)
-        a_smooth = 1.0 * SIM_CAR_A_BRAKE
-        v_target = max(0, math.sqrt(2 * a_smooth * d) - a_smooth / 2)
-        a_req = v_target - self.this.v
+        this = self.this
+        that = self.that
 
-        k_accel = max(0.0, min(1.0, +a_req / SIM_CAR_A_FORWARD))
-        k_brake = max(0.0, min(1.0, -a_req / SIM_CAR_A_BRAKE))
+        d_safe = 32.0
+
+        this_v_next = max (0, this.v + this.a)
+        this_x_next = this.x + this.v + this_v_next
+        d = max(0, that.x - this_x_next - d_safe)
+
+        a_smooth = 0.75 * this.control.car_a_brake
+        energy = 2.0 * a_smooth * d - this_v_next * this_v_next - this_v_next * a_smooth
+        a_req = energy / (2.0 * max (1.0, this_v_next))
+
+        k_accel = max (0.0, min (1.0, a_req / this.control.car_a_forward))
+        k_brake = max (0.0, min (1.0, - a_req / this.control.car_a_brake))
 
         return Cruise(
             prev=self.this,

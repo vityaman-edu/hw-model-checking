@@ -10,15 +10,14 @@ MODULE main
 
   LTLSPEC NAME safety := (G this.x < that.x);
   LTLSPEC NAME liveness := (G (that.x - this.x < 500.0));
-  LTLSPEC NAME liveness500 := (G 500.0 < that.x -> F 500.0 < this.x)
-  LTLSPEC NAME liveness1000 := (G 1000.0 < that.x -> F 1000.0 < this.x)
-  LTLSPEC NAME liveness1500 := (G 1500.0 < that.x -> F 1500.0 < this.x)
+  LTLSPEC NAME liveness500 := (G 500.0 < that.x -> F 500.0 < this.x);
+  LTLSPEC NAME liveness1000 := (G 1000.0 < that.x -> F 1000.0 < this.x);
+  LTLSPEC NAME liveness1500 := (G 1500.0 < that.x -> F 1500.0 < this.x);
 
 MODULE car_control()
   DEFINE
     car_a_forward := 4.0;
     car_a_brake := 6.0;
-    car_a_max := car_a_brake / 2.0;
 
     a_forward := k_accel * car_a_forward;
     a_brake := k_brake * car_a_brake;
@@ -30,7 +29,6 @@ MODULE car_control()
 
 MODULE car(control, x_init, v_init)
   DEFINE
-    max_v := 64;
     a := control.a;
 
   VAR
@@ -42,14 +40,19 @@ MODULE car(control, x_init, v_init)
     next(x) := x + v;
 
     init(v) := v_init;
-    next(v) := min(max_v, max (0, v + a));
+    next(v) := max (0, v + a);
 
 MODULE cruise(this, that)
   DEFINE
-    d_safe := 64.0;
-    d := max (0.0, that.x - this.x - 2 * this.v - d_safe);
-    a_brake := this.control.car_a_brake;
-    a_req := max (0.0, pow (2 * a_brake * d, 1 / 2) - a_brake / 2.0) - this.v;
+    d_safe := 16.0;
+
+    this_v_next := max (0, this.v + this.a);
+    this_x_next := this.x + this.v + this_v_next;
+    d := max (0, that.x - this_x_next - d_safe);
+
+    a_smooth := 0.75 * this.control.car_a_brake;
+    energy := 2.0 * a_smooth * d - this_v_next * this_v_next - this_v_next * a_smooth;
+    a_req := energy / (2.0 * max (1.0, this_v_next));
 
     k_accel := max (0.0, min (1.0, a_req / this.control.car_a_forward));
     k_brake := max (0.0, min (1.0, - a_req / this.control.car_a_brake));
