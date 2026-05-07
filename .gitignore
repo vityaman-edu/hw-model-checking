@@ -4,6 +4,11 @@
 # nuXmv
 nuXmv
 
+# Spin
+spin
+pan*
+*.pml.trail
+
 # Python
 venv/
 __pycache__/
