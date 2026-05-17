@@ -8,6 +8,7 @@ nuXmv
 spin
 pan*
 *.pml.trail
+_spin*.tmp
 
 # Python
 venv/
