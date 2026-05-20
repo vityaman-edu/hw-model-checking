@@ -1,6 +1,10 @@
 # JetBrains
 .idea/
 
+# Python
+venv/
+__pycache__/
+
 # nuXmv
 nuXmv
 
@@ -16,6 +20,5 @@ _spin*.tmp
 *_trace_*
 states/
 
-# Python
-venv/
-__pycache__/
+# PRISM
+prism

@@ -34,3 +34,13 @@
 - <https://lamport.azurewebsites.net/tla/summary-standalone.pdf>
 
 - <https://lamport.azurewebsites.net/tla/book.html>
+
+### Система переходов
+
+![Automata](./security.automata.png)
+
+### Исходный код
+
+- [security.tla](./security.tla)
+
+- [security.cfg](./security.cfg)
