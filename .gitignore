@@ -10,6 +10,12 @@ pan*
 *.pml.trail
 _spin*.tmp
 
+# TLA+
+*.tex
+*.out
+*_trace_*
+states/
+
 # Python
 venv/
 __pycache__/

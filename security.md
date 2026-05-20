@@ -27,4 +27,10 @@
 
 ## Ход работы
 
-TODO
+### Изучние TLA+
+
+- <https://lamport.azurewebsites.net/video/videos.html>
+
+- <https://lamport.azurewebsites.net/tla/summary-standalone.pdf>
+
+- <https://lamport.azurewebsites.net/tla/book.html>
