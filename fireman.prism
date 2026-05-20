@@ -1,0 +1,85 @@
+dtmc
+
+const int STATE_CALM = 0;
+const int STATE_SIGNAL = 1;
+const int STATE_EXTINGUISHING = 2;
+
+const int MAX_TIME = 8;
+const int MAX_MIXTURE = 32;
+
+module House
+    smoke : bool init false;
+    flame : bool init false;
+
+    [] (state  = STATE_EXTINGUISHING & (smoke | flame)) ->
+		0.7 : true +
+		0.3 : (smoke' = false) & (flame' = false);
+
+	[] (state  = STATE_EXTINGUISHING & !(smoke | flame)) ->
+		1.0 : true;
+
+    [] (state != STATE_EXTINGUISHING & !(flame | smoke)) ->
+		0.95 : true +
+		0.04 : (smoke' = true) +
+		0.01 : (flame' = true);
+
+    [] (state != STATE_EXTINGUISHING &  flame & !smoke) ->
+		0.9 : true +
+		0.1 : (smoke' = true);
+
+    [] (state != STATE_EXTINGUISHING & !flame &  smoke) ->
+		0.9 : true +
+		0.1 : (flame' = true);
+
+    [] (state != STATE_EXTINGUISHING &  flame &  smoke) ->
+		1.0 : true;
+endmodule
+
+module Person
+    button : bool init false;
+
+    [] (!button) ->
+		0.90 : true +
+		0.10 : (button'=true);
+
+    [] (button) ->
+		1.0 : (button'=false);
+endmodule
+
+module Fireman
+    state : [STATE_CALM..STATE_EXTINGUISHING] init STATE_CALM;
+
+    timer : [0..MAX_TIME] init 0;
+    mixture : [0..MAX_MIXTURE] init MAX_MIXTURE;
+
+    [signal] (state = STATE_CALM &  (smoke | flame | button)) ->
+		1.0 : (state' = STATE_SIGNAL);
+
+	[] (state = STATE_CALM & !(smoke | flame | button)) ->
+		1.0 : (state' = STATE_CALM);
+
+    [] (state = STATE_SIGNAL) ->
+		1.0 : (state' = STATE_EXTINGUISHING) & (timer' = MAX_TIME);
+
+    [extinguish] (state = STATE_EXTINGUISHING &  timer > 0 & mixture > 0 & !button) ->
+         1.0 : (timer' = timer - 1) & (mixture' = mixture - 1);
+
+    [] (state = STATE_EXTINGUISHING & (timer = 0 | mixture = 0 |  button)) ->
+         1.0 : (state' = STATE_CALM);
+endmodule
+
+rewards "mixture_spent"
+    [extinguish] true : 1;
+endrewards
+
+rewards "calm_time_spent"
+    (state = STATE_CALM & !(smoke | flame)) : 1;
+endrewards
+
+rewards "burning_time_spent"
+    (smoke | flame) : 1;
+endrewards
+
+rewards "signals_heard"
+    [signal] true : 1;
+endrewards

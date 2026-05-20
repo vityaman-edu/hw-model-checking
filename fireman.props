@@ -1,0 +1,23 @@
+R {"mixture_spent"} = ? [ F mixture = 0 ]
+
+R {"burning_time_spent"} = ? [ F mixture = 0 ]
+
+R {"signals_heard"} = ? [ F mixture = 0 ]
+
+// The probability of defenselessness
+P = ? [ F mixture = 0 & (smoke | flame) ]
+
+// The probability of
+// the fireman extinguishing the fire
+// before the button is pressed
+// for the first time
+filter(
+    max,
+    P = ? [ !button U (!smoke & !flame) ],
+    state = 0 & (flame | smoke) & timer = 0 & mixture = 32 & !button
+)
+
+// The probability of
+// all mixture is being spent
+// before the real fire
+P = ? [ !(smoke | flame) U mixture = 0 ]
