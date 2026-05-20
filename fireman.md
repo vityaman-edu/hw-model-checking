@@ -28,4 +28,18 @@
 
 ## Ход работы
 
-TODO
+### Изучение PRISM
+
+- <https://www.prismmodelchecker.org/manual>
+
+- <https://www.prismmodelchecker.org/tutorial>
+
+### Система переходов
+
+![Automata](./fireman.automata.png)
+
+### Исходный код
+
+- [fireman.prism](./fireman.prism)
+
+- [fireman.props](./fireman.props)
